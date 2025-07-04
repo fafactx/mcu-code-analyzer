@@ -1,0 +1,160 @@
+analysis_options:
+  call_analysis: true
+  call_depth: 2
+  deep_analysis: true
+  generate_report: true
+  show_flowchart: true
+analyzer:
+  analysis_timeout: 300
+  exclude_dirs:
+  - build
+  - debug
+  - release
+  - .git
+  - __pycache__
+  max_file_size: 10
+  supported_extensions:
+  - .c
+  - .h
+  - .cpp
+  - .hpp
+  - .cc
+  - .cxx
+app:
+  debug: false
+  language: en
+  log_level: INFO
+  name: MCU Code Analyzer
+  version: 0.1.0
+  version_info:
+    major: 0
+    minor: 1
+    patch: 0
+    build: 1
+    release_date: "2025-07-03"
+    description: "Initial release with local Mermaid rendering and UI auto-resize"
+chip_detection:
+  stm32_series:
+    STM32F0: STM32F0系列 (Cortex-M0)
+    STM32F1: STM32F1系列 (Cortex-M3)
+    STM32F2: STM32F2系列 (Cortex-M3)
+    STM32F3: STM32F3系列 (Cortex-M4)
+    STM32F4: STM32F4系列 (Cortex-M4)
+    STM32F7: STM32F7系列 (Cortex-M7)
+    STM32G0: STM32G0系列 (Cortex-M0+)
+    STM32G4: STM32G4系列 (Cortex-M4)
+    STM32H7: STM32H7系列 (Cortex-M7)
+    STM32L0: STM32L0系列 (Cortex-M0+)
+    STM32L1: STM32L1系列 (Cortex-M3)
+    STM32L4: STM32L4系列 (Cortex-M4)
+  supported_vendors:
+  - STMicroelectronics
+  - NXP
+  - Microchip
+  - Texas Instruments
+  - Infineon
+interface_analysis:
+  patterns:
+    ADC:
+    - HAL_ADC_
+    - ADC_
+    - LPADC_
+    CLOCK:
+    - HAL_RCC_
+    - RCC_
+    - CLOCK_
+    DMA:
+    - HAL_DMA_
+    - DMA_
+    - EDMA_
+    GPIO:
+    - HAL_GPIO_
+    - GPIO_
+    - __HAL_RCC_GPIO
+    - GPIO_Pin
+    - GPIO_Port
+    I2C:
+    - HAL_I2C_
+    - I2C_
+    - LPI2C_
+    SPI:
+    - HAL_SPI_
+    - SPI_
+    - LPSPI_
+    TIMER:
+    - HAL_TIM_
+    - TIM_
+    - CTIMER_
+    UART:
+    - HAL_UART_
+    - UART_
+    - USART_
+    - LPUART_
+llm:
+  custom:
+    api_key: ''
+    base_url: ''
+    max_tokens: 2048
+    model: ''
+    temperature: 0.1
+    timeout: 30
+  default_provider: ollama
+  ollama:
+    base_url: http://10.52.8.74:445
+    max_tokens: 120000
+    model: qwen2.5-coder:7b
+    temperature: 0.1
+    timeout: 200
+  openai:
+    api_key: ''
+    base_url: https://api.openai.com/v1
+    max_tokens: 2048
+    model: gpt-3.5-turbo
+    temperature: 0.1
+    timeout: 30
+  system_prompt: 你是一位资深的嵌入式系统工程师，专门分析MCU项目的功能和实现。请重点分析项目实现了什么具体功能，使用了哪些硬件接口，以及整体的技术架构。回答要详细、专业、实用。
+mermaid:
+  auto_resize: true
+  height: 800
+  hybrid:
+    enabled: true
+    prefer_online: false
+  playwright:
+    headless: true
+    high_dpi: true
+    timeout: 30
+  rendering_mode: local
+  resize_delay: 500
+  scale: 2.0
+  theme: default
+  width: 1200
+output:
+  default_dir: Analyzer_Output
+  formats:
+  - json
+  - yaml
+  - txt
+  - html
+  - svg
+  graphics:
+    dpi: 300
+    format: svg
+    height: 800
+    width: 1200
+ui:
+  fonts:
+    code: Consolas
+    default: Segoe UI
+    size: 10
+  theme:
+    accent_color: '#E8F4FD'
+    background_color: '#F8F9FA'
+    border_color: '#D1E7DD'
+    primary_color: '#0066CC'
+    secondary_color: '#FF6600'
+    text_color: '#2C3E50'
+  window:
+    height: 800
+    resizable: true
+    title: MCU Code Analyzer v3.0
+    width: 1200
