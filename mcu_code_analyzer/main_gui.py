@@ -9081,10 +9081,69 @@ Chip Information:
         ttk.Button(button_frame, text="Start Analysis", command=start_analysis).pack(side=tk.RIGHT, padx=(0, 10))
 
     def generate_user_prompt(self):
-        """生成User提示词：项目概述 + 函数调用关系（LLM友好格式）"""
+        """生成User提示词：main函数所在文件的完整内容 + Mermaid流程图生成要求"""
         # 准备分析数据
         data = self.prepare_llm_analysis_data()
 
+        # 获取main函数文件路径
+        main_file_path = self.get_main_function_file_path(data['call_analysis'])
+
+        if not main_file_path:
+            # 如果没有找到main函数文件，使用原有的提示词格式
+            return self.generate_fallback_user_prompt(data)
+
+        # 读取main函数文件内容
+        try:
+            from utils.file_utils import FileUtils
+            from pathlib import Path
+            file_content = FileUtils.read_file_safe(Path(main_file_path))
+
+            if not file_content:
+                self.log_message(f"🔧 DEBUG: 无法读取main函数文件: {main_file_path}")
+                return self.generate_fallback_user_prompt(data)
+
+            # 构建新的用户提示词
+            prompt = f"""以下是main函数所在文件的完整C代码内容：
+
+文件路径: {main_file_path}
+
+```c
+{file_content}
+```
+
+把上面C代码分析后画出mermaid流程图。"""
+
+            self.log_message(f"🔧 DEBUG: 已生成基于main函数文件的用户提示词，文件: {main_file_path}")
+            return prompt
+
+        except Exception as e:
+            self.log_message(f"🔧 DEBUG: 读取main函数文件失败: {e}")
+            return self.generate_fallback_user_prompt(data)
+
+    def get_main_function_file_path(self, call_analysis):
+        """从call_analysis中获取main函数所在的文件路径"""
+        try:
+            if not call_analysis or 'call_tree' not in call_analysis:
+                return None
+
+            call_tree = call_analysis['call_tree']
+            if not call_tree:
+                return None
+
+            # main函数应该在call_tree的根节点
+            if call_tree.get('name') == 'main' and 'file' in call_tree:
+                file_path = call_tree['file']
+                self.log_message(f"🔧 DEBUG: 找到main函数文件路径: {file_path}")
+                return file_path
+
+            return None
+
+        except Exception as e:
+            self.log_message(f"🔧 DEBUG: 获取main函数文件路径失败: {e}")
+            return None
+
+    def generate_fallback_user_prompt(self, data):
+        """生成回退的用户提示词（原有格式）"""
         # 生成纯文本的函数调用关系
         call_relationships = self.extract_function_call_relationships(data['call_analysis'])
 
@@ -9548,24 +9607,51 @@ Chip Information:
         return max_child_depth
 
     def display_llm_results(self, llm_content):
-        """显示LLM分析结果"""
+        """显示LLM分析结果（左右分栏：文本+Mermaid图表）"""
         def update_ui():
             # 添加新的LLM分析标签页
             if not hasattr(self, 'llm_frame'):
                 self.llm_frame = ttk.Frame(self.notebook)
                 self.notebook.add(self.llm_frame, text="🤖 LLM分析")
 
+                # 创建左右分栏布局
+                self.llm_paned_window = ttk.PanedWindow(self.llm_frame, orient=tk.HORIZONTAL)
+                self.llm_paned_window.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+                # 左侧：文本分析结果
+                left_frame = ttk.LabelFrame(self.llm_paned_window, text="📝 分析结果", padding="5")
+                self.llm_paned_window.add(left_frame, weight=1)
+
                 self.llm_text = scrolledtext.ScrolledText(
-                    self.llm_frame,
-                    height=15,
+                    left_frame,
                     font=("Microsoft YaHei", 10),
                     wrap=tk.WORD
                 )
                 self.llm_text.pack(fill=tk.BOTH, expand=True)
 
+                # 右侧：Mermaid流程图
+                right_frame = ttk.LabelFrame(self.llm_paned_window, text="📊 Mermaid流程图", padding="5")
+                self.llm_paned_window.add(right_frame, weight=1)
+
+                # 创建右侧内容区域
+                self.llm_mermaid_container = ttk.Frame(right_frame)
+                self.llm_mermaid_container.pack(fill=tk.BOTH, expand=True)
+
+                # 初始状态标签
+                self.llm_mermaid_status = ttk.Label(
+                    self.llm_mermaid_container,
+                    text="等待分析结果...",
+                    font=("Microsoft YaHei", 12),
+                    foreground="gray"
+                )
+                self.llm_mermaid_status.pack(expand=True)
+
             # 清空并显示新结果
             self.llm_text.delete(1.0, tk.END)
             self.llm_text.insert(tk.END, llm_content)
+
+            # 处理Mermaid流程图
+            self.process_llm_mermaid_content(llm_content)
 
             # 切换到LLM分析标签页
             self.notebook.select(self.llm_frame)
@@ -9573,6 +9659,288 @@ Chip Information:
             self.update_status("LLM分析完成")
 
         self.root.after(0, update_ui)
+
+    def extract_mermaid_code_from_llm_result(self, llm_content):
+        """从LLM分析结果中提取Mermaid代码"""
+        import re
+
+        try:
+            # 查找```mermaid...```代码块
+            mermaid_pattern = r'```mermaid\s*\n(.*?)\n```'
+            matches = re.findall(mermaid_pattern, llm_content, re.DOTALL | re.IGNORECASE)
+
+            if matches:
+                # 返回第一个找到的Mermaid代码块
+                mermaid_code = matches[0].strip()
+                self.log_message(f"🔧 DEBUG: 从LLM结果中提取到Mermaid代码，长度: {len(mermaid_code)}")
+                return mermaid_code
+
+            # 尝试其他可能的格式
+            alternative_patterns = [
+                r'```\s*mermaid\s*\n(.*?)\n```',  # 空格变体
+                r'```mermaid(.*?)```',  # 无换行变体
+                r'mermaid\s*:\s*\n(.*?)(?=\n\n|\n[A-Z]|\Z)',  # 标签格式
+            ]
+
+            for pattern in alternative_patterns:
+                matches = re.findall(pattern, llm_content, re.DOTALL | re.IGNORECASE)
+                if matches:
+                    mermaid_code = matches[0].strip()
+                    self.log_message(f"🔧 DEBUG: 使用备用模式提取到Mermaid代码，长度: {len(mermaid_code)}")
+                    return mermaid_code
+
+            self.log_message("🔧 DEBUG: 未在LLM结果中找到Mermaid代码")
+            return None
+
+        except Exception as e:
+            self.log_message(f"🔧 DEBUG: 提取Mermaid代码失败: {e}")
+            return None
+
+    def process_llm_mermaid_content(self, llm_content):
+        """处理LLM结果中的Mermaid内容"""
+        try:
+            # 清空右侧容器
+            for widget in self.llm_mermaid_container.winfo_children():
+                widget.destroy()
+
+            # 提取Mermaid代码
+            mermaid_code = self.extract_mermaid_code_from_llm_result(llm_content)
+
+            if not mermaid_code:
+                # 没有找到Mermaid代码
+                no_mermaid_label = ttk.Label(
+                    self.llm_mermaid_container,
+                    text="📝 分析结果中未包含Mermaid流程图",
+                    font=("Microsoft YaHei", 11),
+                    foreground="orange"
+                )
+                no_mermaid_label.pack(expand=True)
+                return
+
+            # 显示渲染状态
+            self.llm_mermaid_status = ttk.Label(
+                self.llm_mermaid_container,
+                text="🔄 正在渲染Mermaid流程图...",
+                font=("Microsoft YaHei", 11),
+                foreground="blue"
+            )
+            self.llm_mermaid_status.pack(expand=True)
+
+            # 在后台线程中渲染Mermaid
+            import threading
+            render_thread = threading.Thread(
+                target=self.render_llm_mermaid_in_background,
+                args=(mermaid_code,)
+            )
+            render_thread.daemon = True
+            render_thread.start()
+
+        except Exception as e:
+            self.log_message(f"🔧 DEBUG: 处理LLM Mermaid内容失败: {e}")
+            error_label = ttk.Label(
+                self.llm_mermaid_container,
+                text=f"❌ 处理流程图时出错: {str(e)[:50]}...",
+                font=("Microsoft YaHei", 10),
+                foreground="red"
+            )
+            error_label.pack(expand=True)
+
+    def render_llm_mermaid_in_background(self, mermaid_code):
+        """在后台线程中渲染LLM结果中的Mermaid流程图"""
+        try:
+            self.log_message("🔄 开始渲染LLM结果中的Mermaid流程图...")
+
+            # 临时保存当前的mermaid_code，以便使用现有的渲染方法
+            original_mermaid_code = getattr(self, 'mermaid_code', '')
+            self.mermaid_code = mermaid_code
+
+            # 尝试本地Playwright渲染
+            success = False
+            try:
+                success = self.try_playwright_mermaid_rendering_for_llm()
+                if success:
+                    self.log_message("✅ LLM Mermaid本地渲染成功")
+                    return
+            except Exception as e:
+                self.log_message(f"🔧 DEBUG: LLM Mermaid本地渲染失败: {e}")
+
+            # 回退到在线渲染
+            try:
+                success = self.try_online_mermaid_rendering_for_llm()
+                if success:
+                    self.log_message("✅ LLM Mermaid在线渲染成功")
+                    return
+            except Exception as e:
+                self.log_message(f"🔧 DEBUG: LLM Mermaid在线渲染失败: {e}")
+
+            # 所有渲染方法都失败
+            self.root.after(0, self.show_llm_mermaid_render_error)
+
+        except Exception as e:
+            self.log_message(f"❌ LLM Mermaid渲染异常: {e}")
+            self.root.after(0, self.show_llm_mermaid_render_error)
+        finally:
+            # 恢复原始的mermaid_code
+            self.mermaid_code = original_mermaid_code
+
+    def try_playwright_mermaid_rendering_for_llm(self):
+        """为LLM结果尝试Playwright渲染"""
+        try:
+            from utils.playwright_mermaid_renderer import render_mermaid_to_pil
+            from pathlib import Path
+
+            # 获取渲染配置
+            config = self.load_analysis_config()
+            width = config.get('mermaid_width', 1200)
+            height = config.get('mermaid_height', 800)
+            theme = self.config.get('mermaid', {}).get('theme', 'default')
+            scale = self.config.get('mermaid', {}).get('scale', 2.0)
+
+            self.log_message(f"🔧 DEBUG: LLM Mermaid Playwright渲染 - Size: {width}x{height}, Theme: {theme}, Scale: {scale}x")
+
+            # 渲染为PIL图像
+            pil_image = render_mermaid_to_pil(
+                self.mermaid_code,
+                width=width,
+                height=height,
+                theme=theme,
+                scale=scale
+            )
+
+            if pil_image:
+                self.log_message(f"🔧 DEBUG: LLM Mermaid Playwright渲染成功，图像尺寸: {pil_image.size}")
+                # 在UI线程中显示图像
+                self.root.after(0, lambda: self.display_llm_mermaid_image_from_pil(pil_image))
+                return True
+            else:
+                self.log_message("🔧 DEBUG: LLM Mermaid Playwright渲染返回None")
+                return False
+
+        except Exception as e:
+            self.log_message(f"🔧 DEBUG: LLM Mermaid Playwright渲染异常: {e}")
+            return False
+
+    def try_online_mermaid_rendering_for_llm(self):
+        """为LLM结果尝试在线渲染"""
+        try:
+            import requests
+            import base64
+            from PIL import Image, ImageTk
+            import io
+
+            self.log_message("🔧 DEBUG: LLM Mermaid尝试在线渲染")
+
+            # 获取在线渲染配置
+            mermaid_config = self.config.get('mermaid', {})
+            online_config = mermaid_config.get('online', {})
+
+            if not online_config.get('enabled', True):
+                self.log_message("🔧 DEBUG: LLM Mermaid在线渲染已禁用")
+                return False
+
+            # 使用kroki.io服务
+            kroki_url = "https://kroki.io/mermaid/png"
+
+            # 编码Mermaid代码
+            encoded_diagram = base64.urlsafe_b64encode(self.mermaid_code.encode('utf-8')).decode('ascii')
+            full_url = f"{kroki_url}/{encoded_diagram}"
+
+            self.log_message(f"🔧 DEBUG: LLM Mermaid请求URL长度: {len(full_url)}")
+
+            # 发送请求
+            response = requests.get(full_url, timeout=30)
+
+            if response.status_code == 200:
+                # 转换为PIL图像
+                pil_image = Image.open(io.BytesIO(response.content))
+                self.log_message(f"🔧 DEBUG: LLM Mermaid在线渲染成功，图像尺寸: {pil_image.size}")
+
+                # 在UI线程中显示图像
+                self.root.after(0, lambda: self.display_llm_mermaid_image_from_pil(pil_image))
+                return True
+            else:
+                self.log_message(f"🔧 DEBUG: LLM Mermaid在线渲染失败，状态码: {response.status_code}")
+                return False
+
+        except Exception as e:
+            self.log_message(f"🔧 DEBUG: LLM Mermaid在线渲染异常: {e}")
+            return False
+
+    def display_llm_mermaid_image_from_pil(self, pil_image):
+        """在LLM结果面板中显示PIL图像"""
+        try:
+            # 清空容器
+            for widget in self.llm_mermaid_container.winfo_children():
+                widget.destroy()
+
+            # 获取容器尺寸
+            self.llm_mermaid_container.update_idletasks()
+            container_width = self.llm_mermaid_container.winfo_width()
+            container_height = self.llm_mermaid_container.winfo_height()
+
+            # 如果容器尺寸太小，使用默认值
+            if container_width < 100:
+                container_width = 500
+            if container_height < 100:
+                container_height = 400
+
+            # 计算缩放比例
+            img_width, img_height = pil_image.size
+            scale_x = (container_width - 20) / img_width
+            scale_y = (container_height - 20) / img_height
+            scale = min(scale_x, scale_y, 1.0)  # 不放大，只缩小
+
+            if scale < 1.0:
+                new_width = int(img_width * scale)
+                new_height = int(img_height * scale)
+                pil_image = pil_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+            # 转换为Tkinter图像
+            tk_image = ImageTk.PhotoImage(pil_image)
+
+            # 创建滚动画布
+            canvas = tk.Canvas(self.llm_mermaid_container, bg='white')
+            scrollbar_v = ttk.Scrollbar(self.llm_mermaid_container, orient=tk.VERTICAL, command=canvas.yview)
+            scrollbar_h = ttk.Scrollbar(self.llm_mermaid_container, orient=tk.HORIZONTAL, command=canvas.xview)
+
+            canvas.configure(yscrollcommand=scrollbar_v.set, xscrollcommand=scrollbar_h.set)
+
+            # 布局
+            canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            scrollbar_v.pack(side=tk.RIGHT, fill=tk.Y)
+            scrollbar_h.pack(side=tk.BOTTOM, fill=tk.X)
+
+            # 在画布中显示图像
+            canvas.create_image(0, 0, anchor=tk.NW, image=tk_image)
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+            # 保持图像引用
+            canvas.image = tk_image
+
+            self.log_message("✅ LLM Mermaid图像显示成功")
+
+        except Exception as e:
+            self.log_message(f"❌ LLM Mermaid图像显示失败: {e}")
+            self.show_llm_mermaid_render_error()
+
+    def show_llm_mermaid_render_error(self):
+        """显示LLM Mermaid渲染错误"""
+        try:
+            # 清空容器
+            for widget in self.llm_mermaid_container.winfo_children():
+                widget.destroy()
+
+            error_label = ttk.Label(
+                self.llm_mermaid_container,
+                text="❌ Mermaid流程图渲染失败\n请检查网络连接或Mermaid代码格式",
+                font=("Microsoft YaHei", 11),
+                foreground="red",
+                justify=tk.CENTER
+            )
+            error_label.pack(expand=True)
+
+        except Exception as e:
+            self.log_message(f"🔧 DEBUG: 显示LLM Mermaid错误信息失败: {e}")
 
     def run(self):
         """运行主窗口"""

@@ -1,6 +1,6 @@
 analysis_options:
   call_analysis: true
-  call_depth: 2
+  call_depth: 3
   deep_analysis: true
   generate_report: true
   show_flowchart: true
@@ -27,12 +27,12 @@ app:
   name: MCU Code Analyzer
   version: 0.1.0
   version_info:
+    build: 1
+    description: Initial release with local Mermaid rendering and UI auto-resize
     major: 0
     minor: 1
     patch: 0
-    build: 1
-    release_date: "2025-07-03"
-    description: "Initial release with local Mermaid rendering and UI auto-resize"
+    release_date: '2025-07-03'
 chip_detection:
   stm32_series:
     STM32F0: STM32F0系列 (Cortex-M0)
